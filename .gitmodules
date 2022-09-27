@@ -1,0 +1,3 @@
+[submodule "genetic_algorithm/Hands-On-Genetic-Algorithms-with-Python"]
+	path = genetic_algorithm/Hands-On-Genetic-Algorithms-with-Python
+	url = git@github.com:PacktPublishing/Hands-On-Genetic-Algorithms-with-Python.git

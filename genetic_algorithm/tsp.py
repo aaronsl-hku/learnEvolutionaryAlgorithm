@@ -12,6 +12,18 @@ from pathlib import Path
 
 DATA_PATH = Path('data/tsp')
 
+def read_data(file_path):
+    distance = []
+    with file_path.open() as f:
+        dist_str = f.readlines()
+
+    for row_str in dist_str:
+
+        row = list(map(float, row_str.split()))
+        if len(row):
+            distance.append(row)
+    return distance
+
 def generate_eval(distance_matrix: List[List[float]]) -> Callable:
     def eval_tsp(individual: List[float]) -> List[float]:
         origin = i = -1
@@ -27,6 +39,7 @@ creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
 creator.create("Individual", list, fitness=creator.FitnessMin)
 
 def tsp(distance_matrix: List[List[float]]):
+    random.seed(1234)
     num_cities = len(distance_matrix)
     pop_size = num_cities * 20
 
@@ -37,9 +50,9 @@ def tsp(distance_matrix: List[List[float]]):
 
     eval_tsp = generate_eval(distance_matrix=distance_matrix)
     toolbox.register("evaluate", eval_tsp)
-    toolbox.register("mate", tools.cxOrdered)
-    toolbox.register("mutate", tools.mutShuffleIndexes, indpb=0.1)
-    toolbox.register("select", tools.selTournament, tournsize=3)
+    toolbox.register("mate", tools.cxUniformPartialyMatched, indpb=max(0.2, 2./num_cities))
+    toolbox.register("mutate", tools.mutShuffleIndexes, indpb=max(0.1,1./num_cities))
+    toolbox.register("select", tools.selTournament, tournsize=2)
 
     pop = toolbox.population(n=pop_size)
     hof = tools.HallOfFame(1)
@@ -49,23 +62,18 @@ def tsp(distance_matrix: List[List[float]]):
     stats.register("min", np.min)
     stats.register("max", np.max)
 
-    pop, log = algorithms.eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.5, ngen=num_cities * 50,
+    pop, log = algorithms.eaSimple(pop, toolbox, cxpb=0.8, mutpb=0.3, ngen=num_cities * 50,
                                    stats=stats, halloffame=hof, verbose=True)
+    best_fitness = toolbox.evaluate(hof[0])
 
-    return pop, log, hof
+    return pop, log, hof, best_fitness
 
 if __name__ == "__main__":
     set_name = sys.argv[1]
+    file_path = DATA_PATH / f"{set_name}.tsp"
+    distance = read_data(file_path)
 
-    distance = []
-    with (DATA_PATH / f"{set_name}_d.txt").open() as f:
-        dist_str = f.readlines()
-
-    for row_str in dist_str:
-        row = list(map(float, row_str.split()))
-        if len(row):
-            distance.append(row)
-            print(distance[-1])
-
-    pop, log, hof = tsp(distance)
-    print("Best solution: ", [0,] + [i+1 for i in hof[0]])
+    pop, log, hof, best_fitness = tsp(distance)
+    print("Best solution: ")
+    print("Objective: ", best_fitness)
+    print(' -> '.join(["0",] + [str(i+1) for i in hof[0]] + ["0",]))
