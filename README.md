@@ -5,13 +5,13 @@ My personal journal on learning Evolutionary Algorithms
 ## TODO's
 
 - Try to use `https://tsplib95.readthedocs.io/en/stable/pages/usage.html` for reading `.tsp`s.
+- See how to configure the tsp
 
 ## Readings
 
 ### Genetic Algorithm
 
-- [ ] [A Comparative Study of Adaptive Crossover Operators for Genetic Algorithms to Resolve the Traveling Salesman Problem](https://arxiv.org/pdf/1203.3097.pdf)
-  - Crossover operators for individuals in indices.
+- [ ] Evolutionary Algorithms (Chapter 4.3. Order-based Representation and variation operators)
 
 ## PyGAD
 

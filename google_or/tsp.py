@@ -5,21 +5,28 @@ Copied and modified from https://developers.google.com/optimization/routing/tsp
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 
+import tsplib95, networkx
+
 import sys
 from pathlib import Path
+import requests
 
 DATA_PATH = Path('data/tsp')
 
-def read_data(file_path):
-    distance = []
-    with file_path.open() as f:
-        dist_str = f.readlines()
+def read_data(set_name):
+    file_path = DATA_PATH / f"{set_name}.tsp"
+    if not file_path.exists():
+        url = f"http://elib.zib.de/pub/mp-testdata/tsp/tsplib/tsp/{set_name}.tsp"
+        response = requests.get(url)
+        open(str(file_path), "wb").write(response.content)
 
-    for row_str in dist_str:
-        row = list(map(float, row_str.split()))
-        if len(row):
-            distance.append(row)
-    return distance
+    problem = tsplib95.load(str(file_path))
+    # convert into a networkx.Graph
+    graph = problem.get_graph()
+
+    # convert into a numpy distance matrix
+    distance_matrix = networkx.to_numpy_matrix(graph)
+    return distance_matrix.tolist()
 
 DISTANCE_MATRIX = [
     [0, 2451, 713, 1018, 1631, 1374, 2408, 213, 2571, 875, 1420, 2145, 1972],
@@ -68,8 +75,7 @@ def main():
     # Instantiate the data problem.
     if len(sys.argv) > 1:
         set_name = sys.argv[1]
-        file_path = DATA_PATH / f"{set_name}_d.txt"
-        distance = read_data(file_path)
+        distance = read_data(set_name)
         data = create_data_model(distance, 1, 0)
     else:
         data = create_data_model()
