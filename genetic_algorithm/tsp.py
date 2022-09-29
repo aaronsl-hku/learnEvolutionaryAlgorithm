@@ -1,11 +1,11 @@
 """Implementation of TSP using `deap`.
 """
 
-from copy import deepcopy
+from genetic_algorithm import crossovers
+
 from functools import partial
-from queue import PriorityQueue
 import random
-from typing import Callable, Dict, List, Tuple
+from typing import List
 import numpy as np
 from deap import base, creator, tools, algorithms
 
@@ -15,95 +15,33 @@ import sys
 from pathlib import Path
 import requests
 
+import multiprocessing
+
 DATA_PATH = Path('data/tsp')
 
-def cxEdgeRecombination(ind1: List[int], ind2: List[int]) -> Tuple[List[int], List[int]]:
-    def recombine(p_queue: PriorityQueue, neighbors: Dict[int,set], is_p_queue_neg: bool) -> List[int]:
-        visited = set()
-        offspring = []
-        init_iter, idx = True, random.choice(list(neighbors.keys())) * (-1 if is_p_queue_neg else 1)
-        while len(visited) < len(neighbors):
-            if init_iter:
-                init_iter = False
-            else:
-                _, idx = p_queue.get()
-            curr_city = -idx if is_p_queue_neg else idx
-            if curr_city in visited:
-                continue
 
+def selection_func(individuals, k, tournsize, fit_attr="fitness"):
+    k_best = k // 10
+    k_tourn = k - k_best
+    return tools.selBest(individuals, k_best, fit_attr) \
+        + tools.selTournament(individuals, k_tourn, tournsize, fit_attr)
 
-            while curr_city is not None:
-                # print(curr_city, neighbors[curr_city])
-                visited.add(curr_city)
-                offspring.append(curr_city)
-                if len(neighbors[curr_city]) == 0:
-                    break
+creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
+creator.create("Individual", list, fitness=creator.FitnessMin)
 
-                curr_neighbors_by_cardinality = [[] for i in range(5)]
-                for neighbor in neighbors[curr_city]:
-                    neighbors[neighbor].remove(curr_city)
-                    curr_neighbors_by_cardinality[len(neighbors[neighbor])].append(neighbor)
+class TSP:
+    def __init__(self, set_name):
+        random.seed(1234)
 
-                for next_city_candidates in curr_neighbors_by_cardinality:
-                    if next_city_candidates:
-                        curr_city = random.choice(next_city_candidates)
-                        break
-                else:
-                    curr_city = None
-        return offspring
+        self.set_name = set_name
+        self.problem, self.distance = self._read_data(set_name)
 
+    @property
+    def num_cities(self):
+        return len(self.distance)
 
-    neighbors = {node: set() for node in ind1}
-    p_queue1 = PriorityQueue() # For offspring 1
-    p_queue2 = PriorityQueue() # For offspring 2
-    num_nodes = len(ind1)
-    for i in range(num_nodes):
-        neighbors[ind1[i]].add(ind1[i-1])
-        neighbors[ind2[i]].add(ind2[i-1])
-        if i == num_nodes - 1:
-            neighbors[ind1[i]].add(ind1[0])
-            neighbors[ind2[i]].add(ind2[0])
-        else:
-            neighbors[ind1[i]].add(ind1[i+1])
-            neighbors[ind2[i]].add(ind2[i+1])
-
-
-    for i in range(num_nodes):
-        # neighbors[i].update([ind1[i-1], ind2[i-1]])
-        # if i == num_nodes - 1:
-        #     neighbors[i].update([ind1[0], ind2[0]])
-        # else:
-        #     neighbors[i].update([ind1[i+1], ind2[i+1]])
-        p_queue1.put((len(neighbors[i]), i))
-        p_queue2.put((len(neighbors[i]), -i))
-
-    neighbors_copy = deepcopy(neighbors)
-    offspring1 = recombine(p_queue1, neighbors, is_p_queue_neg = False)
-    offspring2 = recombine(p_queue2, neighbors_copy, is_p_queue_neg = True)
-
-    ind1[:], ind2[:] = offspring1[:], offspring2[:]
-    return ind1, ind2
-
-
-
-
-def read_data(set_name):
-    file_path = DATA_PATH / f"{set_name}.tsp"
-    if not file_path.exists():
-        url = f"http://elib.zib.de/pub/mp-testdata/tsp/tsplib/tsp/{set_name}.tsp"
-        response = requests.get(url)
-        open(str(file_path), "wb").write(response.content)
-
-    problem = tsplib95.load(str(file_path))
-    # convert into a networkx.Graph
-    graph = problem.get_graph()
-
-    # convert into a numpy distance matrix
-    distance_matrix = networkx.to_numpy_matrix(graph)
-    return distance_matrix.tolist()
-
-def generate_eval(distance_matrix: List[List[float]]) -> Callable:
-    def eval_tsp(individual: List[float]) -> List[float]:
+    @staticmethod
+    def eval_tsp_with_distance(individual: List[float], distance_matrix: List[List[float]]) ->  List[float]:
         origin = i = -1
         total_dist = 0.
         for j in individual:
@@ -111,46 +49,67 @@ def generate_eval(distance_matrix: List[List[float]]) -> Callable:
             i = j
         total_dist += distance_matrix[j+1][origin+1]
         return total_dist,
-    return eval_tsp
 
-creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
-creator.create("Individual", list, fitness=creator.FitnessMin)
+    @property
+    def best_solution(self):
+        return ["0",] + [str(i+1) for i in self.hof[0]] + ["0",]
 
-def tsp(distance_matrix: List[List[float]]):
-    random.seed(1234)
-    num_cities = len(distance_matrix)
-    pop_size = num_cities * 20
+    @staticmethod
+    def _read_data(set_name):
+        file_path = DATA_PATH / f"{set_name}.tsp"
+        if not file_path.exists():
+            url = f"http://elib.zib.de/pub/mp-testdata/tsp/tsplib/tsp/{set_name}.tsp"
+            response = requests.get(url)
+            open(str(file_path), "wb").write(response.content)
 
-    toolbox = base.Toolbox()
-    gen_idx = partial(random.sample, range(0, num_cities-1), num_cities-1)
-    toolbox.register("individual", tools.initIterate, creator.Individual, gen_idx)
-    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+        problem = tsplib95.load(str(file_path))
+        # convert into a networkx.Graph
+        graph = problem.get_graph()
 
-    eval_tsp = generate_eval(distance_matrix=distance_matrix)
-    toolbox.register("evaluate", eval_tsp)
-    toolbox.register("mate", cxEdgeRecombination)
-    toolbox.register("mutate", tools.mutShuffleIndexes, indpb=max(0.1,1./num_cities))
-    toolbox.register("select", tools.selTournament, tournsize=2)
+        # convert into a numpy distance matrix
+        distance_matrix = networkx.to_numpy_matrix(graph)
+        return problem, distance_matrix.tolist()
 
-    pop = toolbox.population(n=pop_size)
-    hof = tools.HallOfFame(1)
-    stats = tools.Statistics(lambda ind: ind.fitness.values)
-    stats.register("avg", np.mean)
-    stats.register("std", np.std)
-    stats.register("min", np.min)
-    stats.register("max", np.max)
+    def setup_toolbox(self, toolbox=None):
+        if toolbox is None:
+            toolbox = base.Toolbox()
+        self.toolbox = toolbox
+        distance_matrix = self.distance
+        pop_size = self.num_cities * 10
+        self.ngen = self.num_cities * 20
 
-    pop, log = algorithms.eaSimple(pop, toolbox, cxpb=0.8, mutpb=0.3, ngen=num_cities * 50,
-                                   stats=stats, halloffame=hof, verbose=True)
-    best_fitness = toolbox.evaluate(hof[0])
+        gen_idx = partial(random.sample, range(0, self.num_cities-1), self.num_cities-1)
+        self.toolbox.register("individual", tools.initIterate, creator.Individual, gen_idx)
+        self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
 
-    return pop, log, hof, best_fitness
+        eval_tsp = partial(self.eval_tsp_with_distance, distance_matrix=distance_matrix)
+        self.toolbox.register("evaluate", eval_tsp)
+        self.toolbox.register("mate", crossovers.cxEdgeRecombination)
+        self.toolbox.register("mutate", tools.mutShuffleIndexes, indpb=max(0.1,1./self.num_cities))
+        self.toolbox.register("select", selection_func, tournsize=3)
+
+        self.pop = self.toolbox.population(n=pop_size)
+        self.hof = tools.HallOfFame(1)
+        self.stats = tools.Statistics(lambda ind: ind.fitness.values)
+        self.stats.register("median", np.median)
+        self.stats.register("min", np.min)
+
+    def run(self):
+        self.pop, self.log = algorithms.eaSimple(self.pop, self.toolbox, cxpb=0.9, mutpb=0.1, ngen=self.ngen,
+                                    stats=self.stats, halloffame=self.hof, verbose=True)
+        best_fitness = self.toolbox.evaluate(self.hof[0])
+
+        return self.hof, best_fitness
+
+
 
 if __name__ == "__main__":
     set_name = sys.argv[1]
-    distance = read_data(set_name)
-
-    pop, log, hof, best_fitness = tsp(distance)
+    with multiprocessing.Pool(5) as pool:
+        tsp = TSP(set_name)
+        tsp.setup_toolbox()
+        tsp.toolbox.register("map", pool.map)
+        hof, best_fitness = tsp.run()
     print("Best solution: ")
     print("Objective: ", best_fitness)
-    print(' -> '.join(["0",] + [str(i+1) for i in hof[0]] + ["0",]))
+    print(' -> '.join(tsp.best_solution))

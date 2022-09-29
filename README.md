@@ -2,16 +2,26 @@
 
 My personal journal on learning Evolutionary Algorithms
 
-## TODO's
+To start with, run in **bash /  zsh**
 
-- Try to use `https://tsplib95.readthedocs.io/en/stable/pages/usage.html` for reading `.tsp`s.
-- See how to configure the tsp
+```bash
+source activate
+```
+
+## Milestones
+
+- [x] one_max and knapsack as starter
+- [x] tsp - able to solve gr17
+- [ ] tsp - able to solve larger problems: gr21, gr24, gr48 and gr96
+- [ ] vrp problems - vanilla
+- [ ] vrp variants
 
 ## Readings
 
-### Genetic Algorithm
+### Genetic Algorithm for discrete spaces (permutations and list of sets)
 
-- [ ] Evolutionary Algorithms (Chapter 4.3. Order-based Representation and variation operators)
+- [x] Evolutionary Algorithms (Chapter 4.3. Order-based Representation and variation operators)
+- [ ] Evolutionary Algorithms (Entire Chapter 4)
 
 ## PyGAD
 
